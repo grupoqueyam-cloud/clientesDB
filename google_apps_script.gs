@@ -1,21 +1,23 @@
 /**
- * Backend corregido para GitHub Pages + Google Sheets.
+ * Backend definitivo para GitHub Pages + Google Sheets.
  *
- * Esta versión evita el problema CORS usando:
- * - JSONP para leer registros desde GitHub Pages.
- * - POST no-cors con formulario para guardar, editar y eliminar.
+ * CAMBIO CLAVE:
+ * - Permite guardar, editar y eliminar mediante JSONP por GET.
+ * - Esto evita bloqueos de Safari/Chrome/GitHub Pages con POST no-cors.
+ * - Mantiene doPost como respaldo, pero el app.js usa JSONP para todo.
  *
  * PASOS:
  * 1. Abre tu Google Sheet.
  * 2. Extensiones > Apps Script.
  * 3. Borra el código anterior y pega este archivo completo.
- * 4. Implementar > Administrar implementaciones > Editar > Nueva versión.
- * 5. Ejecutar como: Yo.
- * 6. Acceso: Cualquier persona con el enlace.
- * 7. Copia la URL que termina en /exec y pégala en app.js.
+ * 4. Ejecuta manualmente la función pruebaConexion y autoriza permisos.
+ * 5. Implementar > Administrar implementaciones > Editar > Nueva versión.
+ * 6. Ejecutar como: Yo.
+ * 7. Acceso: Cualquier persona o Cualquier persona con el enlace.
+ * 8. Copia la URL /exec y pégala en app.js.
  */
 const SHEET_NAME = 'Clientes';
-const SPREADSHEET_ID = ''; // Si el script está dentro del Sheet, déjalo vacío.
+const SPREADSHEET_ID = ''; // Si el script está dentro del Sheet, déjalo vacío. Si es independiente, pega aquí el ID del Google Sheet.
 const API_TOKEN = ''; // Opcional. Si lo llenas, usa el mismo valor en app.js.
 
 const HEADERS = [
@@ -26,20 +28,36 @@ const HEADERS = [
 ];
 
 function doGet(e) {
+  const lock = LockService.getScriptLock();
+
   try {
-    assertToken_(e, null);
     const action = String((e.parameter && e.parameter.action) || 'list').toLowerCase();
+    assertToken_(e, null);
+
     let result;
 
     if (action === 'setup') {
       result = { ok: true, message: 'Hoja preparada.', headers: setupSheet_() };
-    } else {
+    } else if (action === 'list') {
       result = { ok: true, data: listRecords_(), headers: HEADERS };
+    } else if (['create', 'update', 'delete'].indexOf(action) >= 0) {
+      lock.waitLock(30000);
+      const payload = parsePayloadFromGet_(e);
+
+      if (action === 'create') createRecord_(payload);
+      if (action === 'update') updateRecord_(payload);
+      if (action === 'delete') deleteRecord_(payload.id);
+
+      result = { ok: true, message: 'Operación guardada correctamente.', data: listRecords_(), headers: HEADERS };
+    } else {
+      throw new Error('Acción no permitida: ' + action);
     }
 
     return output_(e, result);
   } catch (error) {
     return output_(e, { ok: false, message: error.message });
+  } finally {
+    try { lock.releaseLock(); } catch (err) {}
   }
 }
 
@@ -59,11 +77,42 @@ function doPost(e) {
     else if (action === 'delete') deleteRecord_(payload.id);
     else throw new Error('Acción no permitida: ' + action);
 
-    return output_(e, { ok: true, data: listRecords_(), headers: HEADERS });
+    return output_(e, { ok: true, message: 'Operación guardada correctamente.', data: listRecords_(), headers: HEADERS });
   } catch (error) {
     return output_(e, { ok: false, message: error.message });
   } finally {
     lock.releaseLock();
+  }
+}
+
+function pruebaConexion() {
+  setupSheet_();
+  const sheet = getSheet_();
+  Logger.log('Conexión correcta. Hoja activa: ' + sheet.getName());
+}
+
+function pruebaGuardar() {
+  createRecord_({
+    fechaRegistro: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+    nombres: 'Prueba',
+    apellidos: 'Sistema',
+    contacto: '0999999999',
+    servicio: 'Prueba de conexión',
+    redSocial: 'Sistema',
+    esReferido: 'No',
+    estado: 'Prueba',
+    huboContrato: 'No',
+    observaciones: 'Registro creado desde Apps Script para validar escritura.'
+  });
+  Logger.log('Registro de prueba guardado correctamente.');
+}
+
+function parsePayloadFromGet_(e) {
+  const raw = e && e.parameter && e.parameter.payload ? e.parameter.payload : '{}';
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error('Payload inválido. No se pudo leer la información enviada desde la página.');
   }
 }
 
@@ -74,7 +123,7 @@ function parseBody_(e) {
     try {
       return JSON.parse(contents);
     } catch (err) {
-      // Cuando se envía como formulario desde GitHub Pages, llega por e.parameter.data.
+      // Cuando se envía como formulario, llega por e.parameter.data.
     }
   }
 
@@ -86,7 +135,9 @@ function parseBody_(e) {
 }
 
 function getSpreadsheet_() {
-  return SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('No se pudo abrir el Google Sheet. Si el script no está dentro de la hoja, debes llenar SPREADSHEET_ID.');
+  return ss;
 }
 
 function getSheet_() {
@@ -131,11 +182,11 @@ function listRecords_() {
 function createRecord_(payload) {
   const sheet = getSheet_();
   const record = normalizeRecord_(payload);
-  if (!record.id) record.id = Utilities.getUuid();
+  if (!record.id) record.id = 'CLI-' + new Date().getTime() + '-' + Utilities.getUuid().slice(0, 8).toUpperCase();
   const now = new Date().toISOString();
   record.createdAt = record.createdAt || now;
   record.updatedAt = now;
-  sheet.appendRow(HEADERS.map(header => record[header] || ''));
+  sheet.appendRow(HEADERS.map(header => record[header] !== undefined && record[header] !== null ? record[header] : ''));
 }
 
 function updateRecord_(payload) {
@@ -147,7 +198,7 @@ function updateRecord_(payload) {
   const current = rowToObject_(sheet.getRange(rowNumber, 1, 1, HEADERS.length).getValues()[0]);
   const record = normalizeRecord_(Object.assign({}, current, payload));
   record.updatedAt = new Date().toISOString();
-  sheet.getRange(rowNumber, 1, 1, HEADERS.length).setValues([HEADERS.map(header => record[header] || '')]);
+  sheet.getRange(rowNumber, 1, 1, HEADERS.length).setValues([HEADERS.map(header => record[header] !== undefined && record[header] !== null ? record[header] : '')]);
 }
 
 function deleteRecord_(id) {
@@ -170,7 +221,11 @@ function rowToObject_(row) {
   return HEADERS.reduce((obj, header, index) => {
     const value = row[index];
     if (value instanceof Date) {
-      obj[header] = Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      if (header.toLowerCase().includes('fecha')) {
+        obj[header] = Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      } else {
+        obj[header] = value.toISOString();
+      }
     } else {
       obj[header] = value;
     }
@@ -180,7 +235,7 @@ function rowToObject_(row) {
 
 function normalizeRecord_(payload) {
   const record = {};
-  HEADERS.forEach(header => record[header] = payload[header] !== undefined && payload[header] !== null ? payload[header] : '');
+  HEADERS.forEach(header => record[header] = payload && payload[header] !== undefined && payload[header] !== null ? payload[header] : '');
   record.esReferido = yesNo_(record.esReferido);
   record.huboContrato = yesNo_(record.huboContrato);
   return record;

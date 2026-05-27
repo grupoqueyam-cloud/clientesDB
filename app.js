@@ -135,21 +135,19 @@ async function requestApi(action, payload = {}) {
   if (!apiReady()) return localRequest(action, payload);
 
   let data;
+
+  // IMPORTANTE:
+  // Esta versión usa JSONP también para guardar/editar/eliminar.
+  // Así se evita que Safari, Chrome o GitHub Pages bloqueen el POST no-cors.
   if (action === "list" || action === "setup") {
     data = await jsonpRequest({ action });
-  } else {
-    const form = new URLSearchParams();
-    form.set("data", JSON.stringify({ action, token: CONFIG.API_TOKEN, payload }));
-
-    await fetch(CONFIG.APPS_SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      body: form
+  } else if (["create", "update", "delete"].includes(action)) {
+    data = await jsonpRequest({
+      action,
+      payload: JSON.stringify(payload)
     });
-
-    // Google Apps Script puede tardar unos milisegundos en escribir la fila.
-    await sleep(900);
-    data = await jsonpRequest({ action: "list" });
+  } else {
+    throw new Error(`Acción no permitida: ${action}`);
   }
 
   if (!data || !data.ok) throw new Error(data?.message || "No se pudo procesar la solicitud en Google Sheets.");
