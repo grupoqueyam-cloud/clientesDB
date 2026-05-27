@@ -5,8 +5,8 @@
   3) Sube estos archivos a GitHub Pages.
 */
 const CONFIG = {
-  APPS_SCRIPT_URL: "", // Ejemplo: "https://script.google.com/macros/s/AKfycb.../exec"
-  API_TOKEN: "" // Opcional. Debe coincidir con API_TOKEN en Google Apps Script si lo activas.
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyZH0IqWCqleke0KlZGZ9-fGRsr6_X5HC_zyD7wzvkFwE-8dvnTqXfPAN8wXjycvEi4zw/exec", // Ejemplo: "https://script.google.com/macros/s/AKfycb.../exec"
+  API_TOKEN: "AKfycbyZH0IqWCqleke0KlZGZ9-fGRsr6_X5HC_zyD7wzvkFwE-8dvnTqXfPAN8wXjycvEi4zw" // Opcional. Debe coincidir con API_TOKEN en Google Apps Script si lo activas.
 };
 
 const STORAGE_KEY = "crm_clientes_editorial_demo";
