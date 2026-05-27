@@ -1,86 +1,52 @@
-# CRM Editorial: Clientes, Leads y Contratos
+# CRM Clientes Editorial - Versión con control de actualización
 
-Página web estática en JavaScript para registrar clientes por fecha, canal de captación, referidos, seguimientos y contratos. Está pensada para funcionar en GitHub Pages y almacenar la información en Google Sheets usando Google Apps Script como backend.
+Esta versión agrega un **panel de control de actualización** para evitar que el sistema redibuje gráficas o sincronice automáticamente mientras el usuario está intentando bajar al formulario.
 
-## Estructura incluida
+## Archivos que debes reemplazar en GitHub Pages
 
-- `index.html`: interfaz principal.
-- `styles.css`: diseño visual, responsive y profesional.
-- `app.js`: lógica del formulario, dashboard, filtros, gráficos y conexión con Google Sheets.
-- `google_apps_script.gs`: backend que debe pegarse en Google Apps Script.
+Reemplaza estos archivos:
 
-## Columnas que se guardan en Google Sheets
+- `index.html`
+- `styles.css`
+- `app.js`
 
-La base parte de la matriz original: nombres, apellidos, contacto, servicio, origen/red social, estado, seguimiento día 3, seguimiento día 8, seguimiento día 15/30 y observaciones. Además, se agregan campos necesarios para gestión comercial y contractual:
+El archivo `google_apps_script.gs` puede mantenerse, pero se incluye nuevamente en este paquete.
 
-- id
-- fechaRegistro
-- nombres
-- apellidos
-- contacto
-- cedulaRuc
-- correo
-- direccion
-- ciudad
-- servicio
-- redSocial
-- origenDetalle
-- esReferido
-- referidoPor
-- estado
-- huboContrato
-- numeroContrato
-- fechaContrato
-- valorContrato
-- formaPago
-- seguimientoDia3
-- seguimientoDia8
-- seguimientoDia15
-- proximoSeguimiento
-- asesor
-- observaciones
-- createdAt
-- updatedAt
+## Configuración principal en `app.js`
 
-## Configuración de Google Sheets
-
-1. Crea un Google Sheet nuevo.
-2. En el Google Sheet, abre **Extensiones > Apps Script**.
-3. Borra el contenido inicial y pega el código de `google_apps_script.gs`.
-4. Guarda el proyecto.
-5. Ve a **Implementar > Nueva implementación**.
-6. Selecciona tipo **Aplicación web**.
-7. Configura:
-   - Ejecutar como: **Yo**.
-   - Quién tiene acceso: **Cualquier persona con el enlace**.
-8. Autoriza los permisos.
-9. Copia la URL terminada en `/exec`.
-10. Abre `app.js` y pega esa URL en:
+Pega tu URL real de Apps Script aquí:
 
 ```js
 const CONFIG = {
-  APPS_SCRIPT_URL: "PEGA_AQUI_TU_URL_EXEC",
-  API_TOKEN: ""
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/TU_ID/exec",
+  API_TOKEN: "",
+  AUTO_LOAD_ON_START: false,
+  AUTO_REFRESH_MINUTES: 5
 };
 ```
 
-## Publicar en GitHub Pages
+Se recomienda dejar `AUTO_LOAD_ON_START: false` para que la página no intente conectarse automáticamente al abrir. Usa el botón **Actualizar datos**.
 
-1. Crea un repositorio en GitHub.
-2. Sube `index.html`, `styles.css` y `app.js` a la raíz del repositorio.
-3. En GitHub, entra a **Settings > Pages**.
-4. En **Build and deployment**, selecciona:
-   - Source: Deploy from a branch.
-   - Branch: main / root.
-5. Guarda y abre la URL generada por GitHub Pages.
+## Uso del nuevo control
 
-## Modo local
+- **Actualizar datos**: consulta Google Sheets y actualiza la tabla/KPIs.
+- **Actualizar gráficas**: redibuja los gráficos solo cuando lo necesites.
+- **Ir al formulario**: baja directamente a la sección de ingreso de clientes.
+- **Ir a la tabla**: baja a la base de datos.
+- **Autoactualizar cada 5 min**: opcional; no redibuja gráficas para no mover el scroll.
 
-Si `APPS_SCRIPT_URL` está vacío, la página funcionará en modo local con `localStorage`. Esto sirve para pruebas visuales, pero no guarda en Google Sheets. Para operación real, configura Apps Script.
+## Prueba de Apps Script
 
+Abre esta URL en el navegador:
 
-## Corrección CORS para GitHub Pages
+```text
+https://script.google.com/macros/s/TU_ID/exec?action=list&callback=test
+```
 
-Si en la consola aparece el error `No Access-Control-Allow-Origin`, usa esta versión corregida. Google Apps Script no permite leer respuestas `fetch()` desde GitHub Pages como una API REST tradicional. Por eso el proyecto usa JSONP para consultar registros y `POST no-cors` para guardar, editar y eliminar.
+Debe devolver algo como:
 
-Después de pegar el nuevo `google_apps_script.gs`, no olvides ir a **Implementar > Administrar implementaciones > Editar > Nueva versión > Implementar**. Si no creas una nueva versión, Google seguirá ejecutando el código anterior.
+```js
+test({"ok":true,"data":[],"headers":[...]});
+```
+
+Si devuelve una página de error o login, revisa la implementación de Apps Script: debe estar como **Aplicación web**, ejecutar como **Yo** y acceso **Cualquier persona con el enlace**.

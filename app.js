@@ -1,12 +1,18 @@
 /*
-  CONFIGURACIÓN
-  1) Publica google_apps_script.gs como Web App.
-  2) Pega aquí la URL terminada en /exec.
-  3) Sube estos archivos a GitHub Pages.
+  CRM Clientes + Google Sheets + GitHub Pages
+  Versión con CONTROL MANUAL DE ACTUALIZACIÓN.
+
+  Problema corregido:
+  - Ya no se fuerza la sincronización al cargar la página.
+  - Las gráficas no se redibujan en cada movimiento/filtro.
+  - Se agrega control manual para actualizar datos, gráficas e ir al formulario.
+  - Se preserva el scroll cuando se actualiza el dashboard.
 */
 const CONFIG = {
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyZH0IqWCqleke0KlZGZ9-fGRsr6_X5HC_zyD7wzvkFwE-8dvnTqXfPAN8wXjycvEi4zw/exec", // Ejemplo: "https://script.google.com/macros/s/AKfycb.../exec"
-  API_TOKEN: "" // Opcional. Debe coincidir con API_TOKEN en Google Apps Script si lo activas.
+  APPS_SCRIPT_URL: "", // Ejemplo: "https://script.google.com/macros/s/AKfycb.../exec"
+  API_TOKEN: "", // Opcional. Debe coincidir con API_TOKEN en Google Apps Script si lo activas.
+  AUTO_LOAD_ON_START: false, // Déjalo en false para evitar errores automáticos al abrir la página.
+  AUTO_REFRESH_MINUTES: 5
 };
 
 const STORAGE_KEY = "crm_clientes_editorial_demo";
@@ -19,11 +25,14 @@ const HEADERS = [
 
 let leads = [];
 let charts = {};
+let syncTimer = null;
+let isSyncing = false;
+
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 function apiReady() {
-  return CONFIG.APPS_SCRIPT_URL && CONFIG.APPS_SCRIPT_URL.startsWith("https://script.google.com/");
+  return CONFIG.APPS_SCRIPT_URL && CONFIG.APPS_SCRIPT_URL.startsWith("https://script.google.com/") && CONFIG.APPS_SCRIPT_URL.endsWith("/exec");
 }
 
 function todayISO() {
@@ -35,24 +44,54 @@ function uniqueId() {
 }
 
 function normalizeYesNo(value) {
-  return value === "Sí" || value === true || value === "SI" || value === "Si" ? "Sí" : "No";
+  return value === "Sí" || value === true || value === "SI" || value === "Si" || value === "sí" ? "Sí" : "No";
 }
 
 function setStatus(type, text) {
   const status = $("#apiStatus");
+  if (!status) return;
   status.className = `status-pill ${type}`;
   status.textContent = text;
 }
 
 function setMessage(text, type = "ok") {
   const message = $("#formMessage");
+  if (!message) return;
   message.textContent = text;
   message.className = `form-message ${type}`;
-  if (text) setTimeout(() => { message.textContent = ""; }, 4500);
+  if (text) setTimeout(() => { message.textContent = ""; }, 5500);
+}
+
+function setSyncMessage(text, type = "neutral") {
+  const el = $("#syncMessage");
+  if (!el) return;
+  el.textContent = text;
+  el.className = `sync-message ${type}`;
+}
+
+function updateLastSync() {
+  const el = $("#lastSyncLabel");
+  if (!el) return;
+  const now = new Date();
+  el.textContent = `Última actualización: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
+}
+
+function setBusy(state) {
+  isSyncing = state;
+  ["#btnSync", "#btnUpdateData", "#btnUpdateDashboard", "#btnSave"].forEach((selector) => {
+    const btn = $(selector);
+    if (btn) btn.disabled = state;
+  });
+  document.body.classList.toggle("is-syncing", state);
 }
 
 function jsonpRequest(params = {}) {
   return new Promise((resolve, reject) => {
+    if (!apiReady()) {
+      reject(new Error("La URL de Apps Script no está configurada correctamente. Debe terminar en /exec."));
+      return;
+    }
+
     const callbackName = `crmCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const url = new URL(CONFIG.APPS_SCRIPT_URL);
     Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
@@ -60,15 +99,17 @@ function jsonpRequest(params = {}) {
     if (CONFIG.API_TOKEN) url.searchParams.set("token", CONFIG.API_TOKEN);
 
     const script = document.createElement("script");
+    script.async = true;
+
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new Error("Tiempo de espera agotado al conectar con Google Sheets."));
-    }, 20000);
+      reject(new Error("Tiempo de espera agotado. Revisa la implementación de Apps Script y que el acceso sea: Cualquier persona con el enlace."));
+    }, 25000);
 
     function cleanup() {
       clearTimeout(timeout);
       delete window[callbackName];
-      script.remove();
+      if (script.parentNode) script.parentNode.removeChild(script);
     }
 
     window[callbackName] = (data) => {
@@ -78,7 +119,7 @@ function jsonpRequest(params = {}) {
 
     script.onerror = () => {
       cleanup();
-      reject(new Error("No se pudo cargar la respuesta de Google Sheets."));
+      reject(new Error("No se pudo cargar la respuesta de Google Sheets. Abre la URL /exec?action=list&callback=test para verificar permisos."));
     };
 
     script.src = url.toString();
@@ -91,57 +132,42 @@ function sleep(ms) {
 }
 
 async function requestApi(action, payload = {}) {
-  if (!apiReady()) {
-    return localRequest(action, payload);
+  if (!apiReady()) return localRequest(action, payload);
+
+  let data;
+  if (action === "list" || action === "setup") {
+    data = await jsonpRequest({ action });
+  } else {
+    const form = new URLSearchParams();
+    form.set("data", JSON.stringify({ action, token: CONFIG.API_TOKEN, payload }));
+
+    await fetch(CONFIG.APPS_SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      body: form
+    });
+
+    // Google Apps Script puede tardar unos milisegundos en escribir la fila.
+    await sleep(900);
+    data = await jsonpRequest({ action: "list" });
   }
 
-  try {
-    let data;
-    if (action === "list") {
-      // JSONP evita el bloqueo CORS de Google Apps Script en GitHub Pages.
-      data = await jsonpRequest({ action: "list" });
-    } else {
-      // no-cors permite enviar el formulario a Apps Script sin preflight CORS.
-      // La respuesta del POST no se puede leer, por eso luego se consulta la lista con JSONP.
-      const form = new URLSearchParams();
-      form.set("data", JSON.stringify({ action, token: CONFIG.API_TOKEN, payload }));
-
-      await fetch(CONFIG.APPS_SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors",
-        body: form
-      });
-
-      await sleep(800);
-      data = await jsonpRequest({ action: "list" });
-    }
-
-    if (!data.ok) throw new Error(data.message || "No se pudo procesar la solicitud.");
-    setStatus("connected", "Conectado a Google Sheets");
-    return data;
-  } catch (error) {
-    console.error(error);
-    setStatus("error", "Error de conexión con Google Sheets");
-    throw error;
-  }
+  if (!data || !data.ok) throw new Error(data?.message || "No se pudo procesar la solicitud en Google Sheets.");
+  setStatus("connected", "Conectado a Google Sheets");
+  return data;
 }
 
 function localRequest(action, payload = {}) {
   const current = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
   let data = current;
 
-  if (action === "create") {
-    data = [{ ...payload }, ...current];
-  }
-  if (action === "update") {
-    data = current.map((item) => item.id === payload.id ? { ...item, ...payload } : item);
-  }
-  if (action === "delete") {
-    data = current.filter((item) => item.id !== payload.id);
-  }
+  if (action === "create") data = [{ ...payload }, ...current];
+  if (action === "update") data = current.map((item) => item.id === payload.id ? { ...item, ...payload } : item);
+  if (action === "delete") data = current.filter((item) => item.id !== payload.id);
+
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   setStatus("warning", "Modo local: configura Google Sheets");
-  return Promise.resolve({ ok: true, data });
+  return Promise.resolve({ ok: true, data, headers: HEADERS });
 }
 
 function collectFormData() {
@@ -161,6 +187,7 @@ function collectFormData() {
   HEADERS.forEach((header) => {
     if (item[header] === undefined || item[header] === null) item[header] = "";
   });
+
   return item;
 }
 
@@ -170,7 +197,7 @@ function fillForm(item) {
     if (input) input.value = item[header] ?? "";
   });
   $("#formTitle").textContent = "Editar registro";
-  $("#leadForm").scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollToElement("leadForm");
 }
 
 function resetForm() {
@@ -227,6 +254,8 @@ function upsertChart(id, type, labels, data, label) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: { duration: 350 },
+      resizeDelay: 250,
       plugins: {
         legend: { position: "bottom" },
         tooltip: { mode: "index", intersect: false }
@@ -239,7 +268,7 @@ function upsertChart(id, type, labels, data, label) {
   });
 }
 
-function renderDashboard(items) {
+function renderKpis(items) {
   const total = items.length;
   const contratos = items.filter((item) => normalizeYesNo(item.huboContrato) === "Sí").length;
   const sinContrato = total - contratos;
@@ -249,7 +278,13 @@ function renderDashboard(items) {
   $("#kpiContratos").textContent = contratos;
   $("#kpiSinContrato").textContent = sinContrato;
   $("#kpiReferidos").textContent = referidos;
+}
 
+function renderCharts(items) {
+  const scrollBefore = window.scrollY;
+  const total = items.length;
+  const contratos = items.filter((item) => normalizeYesNo(item.huboContrato) === "Sí").length;
+  const sinContrato = total - contratos;
   const redes = countBy(items, "redSocial");
   const fechas = countBy(items, "fechaRegistro");
   const sortedDates = Object.keys(fechas).filter(Boolean).sort();
@@ -257,10 +292,14 @@ function renderDashboard(items) {
   upsertChart("chartContratos", "doughnut", ["Con contrato", "Sin contrato"], [contratos, sinContrato], "Clientes");
   upsertChart("chartRedes", "bar", Object.keys(redes), Object.values(redes), "Clientes por canal");
   upsertChart("chartFechas", "line", sortedDates, sortedDates.map((date) => fechas[date]), "Registros por fecha");
+
+  // Evita que el redibujado de Chart.js mueva la pantalla y bloquee la llegada al formulario.
+  requestAnimationFrame(() => window.scrollTo({ top: scrollBefore, left: 0, behavior: "auto" }));
 }
 
 function renderCanalFilter() {
   const select = $("#filterCanal");
+  if (!select) return;
   const current = select.value;
   const canales = [...new Set(leads.map((item) => item.redSocial).filter(Boolean))].sort();
   select.innerHTML = '<option value="">Todos</option>' + canales.map((canal) => `<option value="${escapeHtml(canal)}">${escapeHtml(canal)}</option>`).join("");
@@ -278,6 +317,8 @@ function escapeHtml(value) {
 
 function renderTable(items) {
   const body = $("#clientTableBody");
+  if (!body) return;
+
   if (!items.length) {
     body.innerHTML = '<tr><td colspan="9" class="empty">No hay registros con los filtros seleccionados.</td></tr>';
     return;
@@ -307,20 +348,41 @@ function renderTable(items) {
   }).join("");
 }
 
-function render() {
+function render({ updateCharts = false } = {}) {
   const filtered = getFilteredLeads();
   renderCanalFilter();
-  renderDashboard(filtered);
+  renderKpis(filtered);
   renderTable(filtered);
+  if (updateCharts) renderCharts(filtered);
 }
 
-async function loadLeads() {
+function normalizeList(data) {
+  return (data || []).map((item) => ({
+    ...item,
+    huboContrato: normalizeYesNo(item.huboContrato),
+    esReferido: normalizeYesNo(item.esReferido)
+  }));
+}
+
+async function loadLeads({ updateCharts = true, silent = false } = {}) {
+  if (isSyncing) return;
+  setBusy(true);
+  setSyncMessage("Sincronizando con Google Sheets...", "loading");
+
   try {
     const response = await requestApi("list");
-    leads = (response.data || []).map((item) => ({ ...item, huboContrato: normalizeYesNo(item.huboContrato), esReferido: normalizeYesNo(item.esReferido) }));
-    render();
+    leads = normalizeList(response.data);
+    render({ updateCharts });
+    updateLastSync();
+    setSyncMessage("Datos actualizados correctamente.", "ok");
   } catch (error) {
-    setMessage(error.message, "error");
+    console.error(error);
+    setStatus("error", "Error de conexión con Google Sheets");
+    setSyncMessage(error.message, "error");
+    if (!silent) setMessage(error.message, "error");
+    render({ updateCharts: false });
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -328,14 +390,34 @@ async function saveLead(event) {
   event.preventDefault();
   const payload = collectFormData();
   const isEditing = Boolean($("#id").value);
+  const originalLeads = [...leads];
+
+  // Actualización optimista: actualiza interfaz aunque Google tarde en responder.
+  if (isEditing) leads = leads.map((item) => item.id === payload.id ? payload : item);
+  else leads = [payload, ...leads];
+  render({ updateCharts: true });
+
+  setBusy(true);
+  setSyncMessage("Guardando registro...", "loading");
 
   try {
-    await requestApi(isEditing ? "update" : "create", payload);
+    const response = await requestApi(isEditing ? "update" : "create", payload);
+    leads = normalizeList(response.data);
+    render({ updateCharts: true });
+    updateLastSync();
     setMessage(isEditing ? "Registro actualizado correctamente." : "Cliente guardado correctamente.");
+    setSyncMessage("Registro guardado y dashboard actualizado.", "ok");
     resetForm();
-    await loadLeads();
   } catch (error) {
-    setMessage(error.message, "error");
+    console.error(error);
+    // Se conserva la actualización local para que no se bloquee la interfaz.
+    leads = originalLeads;
+    render({ updateCharts: true });
+    setStatus("error", "Error de conexión con Google Sheets");
+    setSyncMessage(error.message, "error");
+    setMessage("No se pudo confirmar el guardado en Google Sheets. Revisa la conexión y vuelve a actualizar datos.", "error");
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -344,12 +426,27 @@ async function deleteLead(id) {
   const name = item ? `${item.nombres || ""} ${item.apellidos || ""}`.trim() : "este registro";
   if (!confirm(`¿Eliminar ${name || "este registro"}?`)) return;
 
+  const originalLeads = [...leads];
+  leads = leads.filter((item) => item.id !== id);
+  render({ updateCharts: true });
+
+  setBusy(true);
+  setSyncMessage("Eliminando registro...", "loading");
   try {
-    await requestApi("delete", { id });
+    const response = await requestApi("delete", { id });
+    leads = normalizeList(response.data);
+    render({ updateCharts: true });
+    updateLastSync();
     setMessage("Registro eliminado.");
-    await loadLeads();
+    setSyncMessage("Registro eliminado y dashboard actualizado.", "ok");
   } catch (error) {
+    console.error(error);
+    leads = originalLeads;
+    render({ updateCharts: true });
     setMessage(error.message, "error");
+    setSyncMessage(error.message, "error");
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -371,15 +468,41 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
+function scrollToElement(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function toggleAutoRefresh(enabled) {
+  if (syncTimer) clearInterval(syncTimer);
+  syncTimer = null;
+
+  if (enabled) {
+    syncTimer = setInterval(() => {
+      if (!isSyncing) loadLeads({ updateCharts: false, silent: true });
+    }, CONFIG.AUTO_REFRESH_MINUTES * 60 * 1000);
+    setSyncMessage(`Autoactualización activada cada ${CONFIG.AUTO_REFRESH_MINUTES} minutos.`, "ok");
+  } else {
+    setSyncMessage("Autoactualización desactivada. Usa Actualizar datos cuando lo necesites.", "neutral");
+  }
+}
+
 function bindEvents() {
   $("#leadForm").addEventListener("submit", saveLead);
   $("#btnClear").addEventListener("click", resetForm);
-  $("#btnSync").addEventListener("click", loadLeads);
+  $("#btnSync").addEventListener("click", () => loadLeads({ updateCharts: true }));
+  $("#btnUpdateData")?.addEventListener("click", () => loadLeads({ updateCharts: false }));
+  $("#btnUpdateDashboard")?.addEventListener("click", () => render({ updateCharts: true }));
+  $("#btnGoForm")?.addEventListener("click", () => scrollToElement("leadForm"));
+  $("#btnGoFormHero")?.addEventListener("click", () => scrollToElement("leadForm"));
+  $("#btnGoTable")?.addEventListener("click", () => scrollToElement("tableSection"));
   $("#btnExport").addEventListener("click", exportCSV);
+  $("#toggleAutoRefresh")?.addEventListener("change", (event) => toggleAutoRefresh(event.target.checked));
 
   ["#filterSearch", "#filterFrom", "#filterTo", "#filterContrato", "#filterCanal"].forEach((selector) => {
-    $(selector).addEventListener("input", render);
-    $(selector).addEventListener("change", render);
+    $(selector).addEventListener("input", () => render({ updateCharts: false }));
+    $(selector).addEventListener("change", () => render({ updateCharts: false }));
   });
 
   $("#clientTableBody").addEventListener("click", (event) => {
@@ -408,6 +531,18 @@ function bindEvents() {
 window.addEventListener("DOMContentLoaded", async () => {
   bindEvents();
   resetForm();
-  if (!apiReady()) setStatus("warning", "Modo local: configura Google Sheets");
-  await loadLeads();
+  render({ updateCharts: true });
+
+  if (!apiReady()) {
+    setStatus("warning", "Modo local: configura Google Sheets");
+    setSyncMessage("URL de Apps Script pendiente. El sistema funcionará en modo local.", "neutral");
+    return;
+  }
+
+  setStatus("warning", "Conexión lista. Actualiza manualmente.");
+  setSyncMessage("Presiona Actualizar datos para sincronizar con Google Sheets.", "neutral");
+
+  if (CONFIG.AUTO_LOAD_ON_START) {
+    await loadLeads({ updateCharts: true, silent: true });
+  }
 });

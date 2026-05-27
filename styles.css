@@ -255,3 +255,123 @@ td { color: #344054; font-size: 14px; }
   .form-card, .table-card, .chart-card { padding: 16px; }
   .hero { padding: 22px; }
 }
+
+/* Control de actualización para evitar recargas automáticas y bloqueo de scroll */
+#leadForm, #tableSection, #syncControl {
+  scroll-margin-top: 125px;
+}
+
+.sync-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, .7fr);
+  gap: 18px;
+  align-items: center;
+  padding: 22px;
+  background: rgba(255,255,255,.95);
+}
+
+.sync-info h3 {
+  margin-bottom: 8px;
+  font-size: 22px;
+}
+
+.sync-info p {
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.sync-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.sync-meta span,
+.sync-message {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 8px 11px;
+  font-size: 12px;
+  font-weight: 800;
+  background: #f3f6fb;
+  color: #475467;
+  border: 1px solid var(--line);
+}
+
+.sync-message.ok { background: #dcfce7; color: #067647; }
+.sync-message.error { background: #fee2e2; color: #b42318; }
+.sync-message.loading { background: #fff7ed; color: #b45309; }
+
+.sync-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.btn.ghost.light {
+  color: var(--text);
+  background: #f3f6fb;
+  border-color: var(--line);
+}
+
+.btn:disabled {
+  opacity: .62;
+  cursor: wait;
+  transform: none;
+}
+
+.switch-control {
+  display: inline-flex;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 8px 11px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.switch-control input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--primary-2);
+}
+
+.chart-card {
+  overflow: hidden;
+}
+
+.chart-card canvas {
+  display: block;
+  width: 100% !important;
+  height: 240px !important;
+  max-height: 240px !important;
+}
+
+.chart-card.wide canvas {
+  height: 220px !important;
+  max-height: 220px !important;
+}
+
+body.is-syncing .sync-control {
+  outline: 2px solid rgba(33,160,160,.24);
+}
+
+@media (max-width: 900px) {
+  .sync-control {
+    grid-template-columns: 1fr;
+  }
+
+  .sync-actions {
+    justify-content: flex-start;
+  }
+}

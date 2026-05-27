@@ -37,8 +37,31 @@
         </p>
       </div>
       <div class="hero-actions">
-        <button class="btn primary" type="button" onclick="document.getElementById('leadForm').scrollIntoView({behavior:'smooth'})">Registrar cliente</button>
+        <button id="btnGoFormHero" class="btn primary" type="button">Registrar cliente</button>
         <button id="btnExport" class="btn secondary" type="button">Exportar CSV</button>
+      </div>
+    </section>
+
+    <section id="syncControl" class="card sync-control" aria-label="Control de actualización de datos">
+      <div class="sync-info">
+        <p class="eyebrow">Control de actualización</p>
+        <h3>Actualización manual de datos y gráficas</h3>
+        <p>Para evitar errores de recarga y bloqueo de desplazamiento, los datos se sincronizan desde este panel. Las gráficas se actualizan solo cuando presionas el botón correspondiente.</p>
+        <div class="sync-meta">
+          <span id="lastSyncLabel">Última actualización: pendiente</span>
+          <span id="syncMessage">Sistema listo.</span>
+        </div>
+      </div>
+
+      <div class="sync-actions">
+        <button id="btnUpdateData" class="btn primary" type="button">Actualizar datos</button>
+        <button id="btnUpdateDashboard" class="btn secondary" type="button">Actualizar gráficas</button>
+        <button id="btnGoForm" class="btn ghost light" type="button">Ir al formulario</button>
+        <button id="btnGoTable" class="btn ghost light" type="button">Ir a la tabla</button>
+        <label class="switch-control">
+          <input id="toggleAutoRefresh" type="checkbox" />
+          <span>Autoactualizar cada 5 min</span>
+        </label>
       </div>
     </section>
 
@@ -252,7 +275,7 @@
         </div>
       </form>
 
-      <section class="card table-card">
+      <section id="tableSection" class="card table-card">
         <div class="section-head">
           <div>
             <h3>Base de datos de clientes</h3>
