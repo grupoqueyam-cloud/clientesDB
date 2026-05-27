@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CRM Editorial | Clientes y Contratos</title>
+  <meta name="description" content="Sistema web para registrar leads, clientes, referidos y contratos conectado a Google Sheets." />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="background-grid"></div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">S</div>
+      <div>
+        <p class="eyebrow">CRM comercial</p>
+        <h1>Control de clientes, leads y contratos</h1>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span id="apiStatus" class="status-pill warning">Sin conexión a Google Sheets</span>
+      <button id="btnSync" class="btn ghost" type="button">Sincronizar</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="hero card">
+      <div>
+        <p class="eyebrow">Basado en la matriz “Leads Ventas Diario”</p>
+        <h2>Registro comercial por fechas, red social, referidos y contratos</h2>
+        <p class="hero-text">
+          Gestiona clientes captados por Facebook, Instagram, WhatsApp, referidos u otros canales;
+          registra seguimientos y controla si el proceso terminó o no en contrato.
+        </p>
+      </div>
+      <div class="hero-actions">
+        <button class="btn primary" type="button" onclick="document.getElementById('leadForm').scrollIntoView({behavior:'smooth'})">Registrar cliente</button>
+        <button id="btnExport" class="btn secondary" type="button">Exportar CSV</button>
+      </div>
+    </section>
+
+    <section class="kpi-grid" aria-label="Indicadores principales">
+      <article class="kpi card">
+        <span>Total clientes</span>
+        <strong id="kpiTotal">0</strong>
+        <small>Registros filtrados</small>
+      </article>
+      <article class="kpi card success">
+        <span>Con contrato</span>
+        <strong id="kpiContratos">0</strong>
+        <small>Clientes convertidos</small>
+      </article>
+      <article class="kpi card danger">
+        <span>Sin contrato</span>
+        <strong id="kpiSinContrato">0</strong>
+        <small>Clientes pendientes</small>
+      </article>
+      <article class="kpi card info">
+        <span>Referidos</span>
+        <strong id="kpiReferidos">0</strong>
+        <small>Origen recomendado</small>
+      </article>
+    </section>
+
+    <section class="dashboard-grid">
+      <article class="card chart-card">
+        <div class="section-head">
+          <h3>Contratos</h3>
+          <p>Comparación de clientes con contrato y sin contrato.</p>
+        </div>
+        <canvas id="chartContratos" height="180"></canvas>
+      </article>
+      <article class="card chart-card">
+        <div class="section-head">
+          <h3>Clientes por red social</h3>
+          <p>Canales de captación más efectivos.</p>
+        </div>
+        <canvas id="chartRedes" height="180"></canvas>
+      </article>
+      <article class="card chart-card wide">
+        <div class="section-head">
+          <h3>Registros por fecha</h3>
+          <p>Comportamiento diario de leads/clientes almacenados.</p>
+        </div>
+        <canvas id="chartFechas" height="140"></canvas>
+      </article>
+    </section>
+
+    <section class="content-grid">
+      <form id="leadForm" class="card form-card" autocomplete="off">
+        <div class="section-head sticky-head">
+          <div>
+            <h3 id="formTitle">Nuevo registro</h3>
+            <p>Completa la información del cliente y su estado comercial.</p>
+          </div>
+          <button id="btnClear" class="btn ghost" type="button">Limpiar</button>
+        </div>
+
+        <input type="hidden" id="id" name="id" />
+
+        <fieldset>
+          <legend>1. Datos del cliente</legend>
+          <div class="form-grid">
+            <label>Fecha de registro
+              <input type="date" id="fechaRegistro" name="fechaRegistro" required />
+            </label>
+            <label>Nombres
+              <input type="text" id="nombres" name="nombres" placeholder="Ej. Juan Pablo" required />
+            </label>
+            <label>Apellidos
+              <input type="text" id="apellidos" name="apellidos" placeholder="Ej. Morales" />
+            </label>
+            <label># Contacto
+              <input type="tel" id="contacto" name="contacto" placeholder="Ej. 0999999999" required />
+            </label>
+            <label>Cédula/RUC
+              <input type="text" id="cedulaRuc" name="cedulaRuc" placeholder="Datos para contrato" />
+            </label>
+            <label>Correo
+              <input type="email" id="correo" name="correo" placeholder="cliente@correo.com" />
+            </label>
+            <label>Ciudad
+              <input type="text" id="ciudad" name="ciudad" placeholder="Ambato, Quito, Guayaquil..." />
+            </label>
+            <label>Dirección
+              <input type="text" id="direccion" name="direccion" placeholder="Dirección para contrato" />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>2. Origen, servicio y seguimiento</legend>
+          <div class="form-grid">
+            <label>Servicio
+              <select id="servicio" name="servicio">
+                <option value="Editorial">Editorial</option>
+                <option value="Sustainability">Sustainability</option>
+                <option value="Artículo científico">Artículo científico</option>
+                <option value="Libro">Libro</option>
+                <option value="Tesis">Tesis</option>
+                <option value="Desarrollo">Desarrollo</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </label>
+            <label>Red social / canal
+              <select id="redSocial" name="redSocial" required>
+                <option value="Facebook">Facebook</option>
+                <option value="Instagram">Instagram</option>
+                <option value="TikTok">TikTok</option>
+                <option value="WhatsApp">WhatsApp</option>
+                <option value="Página web">Página web</option>
+                <option value="LinkedIn">LinkedIn</option>
+                <option value="Email">Email</option>
+                <option value="Llamada">Llamada</option>
+                <option value="Referido">Referido</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </label>
+            <label>Detalle de origen
+              <input type="text" id="origenDetalle" name="origenDetalle" placeholder="Campaña, anuncio, contacto, grupo..." />
+            </label>
+            <label>Estado
+              <select id="estado" name="estado">
+                <option value="Nuevo">Nuevo</option>
+                <option value="Interesado">Interesado</option>
+                <option value="Seguimiento">Seguimiento</option>
+                <option value="Sin respuesta">Sin respuesta</option>
+                <option value="Negociación">Negociación</option>
+                <option value="Contrato firmado">Contrato firmado</option>
+                <option value="Descartado">Descartado</option>
+              </select>
+            </label>
+            <label>¿Es referido?
+              <select id="esReferido" name="esReferido">
+                <option value="No">No</option>
+                <option value="Sí">Sí</option>
+              </select>
+            </label>
+            <label>Referido por
+              <input type="text" id="referidoPor" name="referidoPor" placeholder="Nombre de quien refiere" />
+            </label>
+            <label>Seguimiento día 3
+              <select id="seguimientoDia3" name="seguimientoDia3">
+                <option value="Pendiente">Pendiente</option>
+                <option value="Realizado">Realizado</option>
+                <option value="No aplica">No aplica</option>
+              </select>
+            </label>
+            <label>Seguimiento día 8
+              <select id="seguimientoDia8" name="seguimientoDia8">
+                <option value="Pendiente">Pendiente</option>
+                <option value="Realizado">Realizado</option>
+                <option value="No aplica">No aplica</option>
+              </select>
+            </label>
+            <label>Seguimiento día 15/30
+              <select id="seguimientoDia15" name="seguimientoDia15">
+                <option value="Pendiente">Pendiente</option>
+                <option value="Realizado">Realizado</option>
+                <option value="No aplica">No aplica</option>
+              </select>
+            </label>
+            <label>Próximo seguimiento
+              <input type="date" id="proximoSeguimiento" name="proximoSeguimiento" />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>3. Datos generales para contrato</legend>
+          <div class="form-grid">
+            <label>¿Hubo contrato?
+              <select id="huboContrato" name="huboContrato">
+                <option value="No">No</option>
+                <option value="Sí">Sí</option>
+              </select>
+            </label>
+            <label>Número de contrato
+              <input type="text" id="numeroContrato" name="numeroContrato" placeholder="Ej. CQ-2026-001" />
+            </label>
+            <label>Fecha de contrato
+              <input type="date" id="fechaContrato" name="fechaContrato" />
+            </label>
+            <label>Valor del contrato
+              <input type="number" id="valorContrato" name="valorContrato" min="0" step="0.01" placeholder="0.00" />
+            </label>
+            <label>Forma de pago
+              <select id="formaPago" name="formaPago">
+                <option value="Pendiente">Pendiente</option>
+                <option value="Transferencia">Transferencia</option>
+                <option value="Efectivo">Efectivo</option>
+                <option value="Tarjeta">Tarjeta</option>
+                <option value="Crédito">Crédito</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </label>
+            <label>Asesor responsable
+              <input type="text" id="asesor" name="asesor" placeholder="Ej. Esteban López" />
+            </label>
+          </div>
+          <label class="full-label">Observaciones
+            <textarea id="observaciones" name="observaciones" rows="4" placeholder="Información enviada, acuerdos, pendientes, objeciones, estado del contrato..."></textarea>
+          </label>
+        </fieldset>
+
+        <div class="form-actions">
+          <button id="btnSave" class="btn primary" type="submit">Guardar en base de datos</button>
+          <span id="formMessage" class="form-message"></span>
+        </div>
+      </form>
+
+      <section class="card table-card">
+        <div class="section-head">
+          <div>
+            <h3>Base de datos de clientes</h3>
+            <p>Filtra por fecha, canal, contrato o búsqueda general.</p>
+          </div>
+        </div>
+
+        <div class="filters">
+          <label>Buscar
+            <input type="search" id="filterSearch" placeholder="Nombre, contacto, estado, observación..." />
+          </label>
+          <label>Desde
+            <input type="date" id="filterFrom" />
+          </label>
+          <label>Hasta
+            <input type="date" id="filterTo" />
+          </label>
+          <label>Contrato
+            <select id="filterContrato">
+              <option value="">Todos</option>
+              <option value="Sí">Con contrato</option>
+              <option value="No">Sin contrato</option>
+            </select>
+          </label>
+          <label>Canal
+            <select id="filterCanal">
+              <option value="">Todos</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Contacto</th>
+                <th>Servicio</th>
+                <th>Canal</th>
+                <th>Referido</th>
+                <th>Estado</th>
+                <th>Contrato</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="clientTableBody">
+              <tr><td colspan="9" class="empty">No hay registros cargados.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <template id="rowActionsTemplate">
+    <div class="row-actions">
+      <button class="icon-btn edit" type="button">Editar</button>
+      <button class="icon-btn delete" type="button">Eliminar</button>
+    </div>
+  </template>
+</body>
+</html>
