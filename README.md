@@ -77,3 +77,10 @@ const CONFIG = {
 ## Modo local
 
 Si `APPS_SCRIPT_URL` está vacío, la página funcionará en modo local con `localStorage`. Esto sirve para pruebas visuales, pero no guarda en Google Sheets. Para operación real, configura Apps Script.
+
+
+## Corrección CORS para GitHub Pages
+
+Si en la consola aparece el error `No Access-Control-Allow-Origin`, usa esta versión corregida. Google Apps Script no permite leer respuestas `fetch()` desde GitHub Pages como una API REST tradicional. Por eso el proyecto usa JSONP para consultar registros y `POST no-cors` para guardar, editar y eliminar.
+
+Después de pegar el nuevo `google_apps_script.gs`, no olvides ir a **Implementar > Administrar implementaciones > Editar > Nueva versión > Implementar**. Si no creas una nueva versión, Google seguirá ejecutando el código anterior.

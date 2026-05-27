@@ -1,16 +1,21 @@
 /**
- * Backend para guardar la página de GitHub Pages en Google Sheets.
+ * Backend corregido para GitHub Pages + Google Sheets.
+ *
+ * Esta versión evita el problema CORS usando:
+ * - JSONP para leer registros desde GitHub Pages.
+ * - POST no-cors con formulario para guardar, editar y eliminar.
  *
  * PASOS:
- * 1. Crea un Google Sheet.
+ * 1. Abre tu Google Sheet.
  * 2. Extensiones > Apps Script.
- * 3. Pega este código.
- * 4. Implementar > Nueva implementación > Aplicación web.
- * 5. Ejecutar como: Yo. Acceso: Cualquier persona con el enlace.
- * 6. Copia la URL /exec y pégala en CONFIG.APPS_SCRIPT_URL dentro de app.js.
+ * 3. Borra el código anterior y pega este archivo completo.
+ * 4. Implementar > Administrar implementaciones > Editar > Nueva versión.
+ * 5. Ejecutar como: Yo.
+ * 6. Acceso: Cualquier persona con el enlace.
+ * 7. Copia la URL que termina en /exec y pégala en app.js.
  */
 const SHEET_NAME = 'Clientes';
-const SPREADSHEET_ID = ''; // Opcional. Si el script está vinculado al Sheet, déjalo vacío.
+const SPREADSHEET_ID = ''; // Si el script está dentro del Sheet, déjalo vacío.
 const API_TOKEN = ''; // Opcional. Si lo llenas, usa el mismo valor en app.js.
 
 const HEADERS = [
@@ -23,20 +28,29 @@ const HEADERS = [
 function doGet(e) {
   try {
     assertToken_(e, null);
-    const action = (e.parameter.action || 'list').toLowerCase();
-    if (action === 'setup') return json_({ ok: true, message: 'Hoja preparada.', headers: setupSheet_() });
-    return json_({ ok: true, data: listRecords_(), headers: HEADERS });
+    const action = String((e.parameter && e.parameter.action) || 'list').toLowerCase();
+    let result;
+
+    if (action === 'setup') {
+      result = { ok: true, message: 'Hoja preparada.', headers: setupSheet_() };
+    } else {
+      result = { ok: true, data: listRecords_(), headers: HEADERS };
+    }
+
+    return output_(e, result);
   } catch (error) {
-    return json_({ ok: false, message: error.message });
+    return output_(e, { ok: false, message: error.message });
   }
 }
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
+
   try {
-    const body = JSON.parse(e.postData && e.postData.contents ? e.postData.contents : '{}');
+    const body = parseBody_(e);
     assertToken_(e, body);
+
     const action = String(body.action || '').toLowerCase();
     const payload = body.payload || {};
 
@@ -45,12 +59,30 @@ function doPost(e) {
     else if (action === 'delete') deleteRecord_(payload.id);
     else throw new Error('Acción no permitida: ' + action);
 
-    return json_({ ok: true, data: listRecords_(), headers: HEADERS });
+    return output_(e, { ok: true, data: listRecords_(), headers: HEADERS });
   } catch (error) {
-    return json_({ ok: false, message: error.message });
+    return output_(e, { ok: false, message: error.message });
   } finally {
     lock.releaseLock();
   }
+}
+
+function parseBody_(e) {
+  const contents = e && e.postData && e.postData.contents ? e.postData.contents : '';
+
+  if (contents) {
+    try {
+      return JSON.parse(contents);
+    } catch (err) {
+      // Cuando se envía como formulario desde GitHub Pages, llega por e.parameter.data.
+    }
+  }
+
+  if (e && e.parameter && e.parameter.data) {
+    return JSON.parse(e.parameter.data);
+  }
+
+  return {};
 }
 
 function getSpreadsheet_() {
@@ -137,7 +169,11 @@ function findRowById_(sheet, id) {
 function rowToObject_(row) {
   return HEADERS.reduce((obj, header, index) => {
     const value = row[index];
-    obj[header] = value instanceof Date ? Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd') : value;
+    if (value instanceof Date) {
+      obj[header] = Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    } else {
+      obj[header] = value;
+    }
     return obj;
   }, {});
 }
@@ -157,12 +193,22 @@ function yesNo_(value) {
 
 function assertToken_(e, body) {
   if (!API_TOKEN) return;
-  const token = (body && body.token) || (e.parameter && e.parameter.token) || '';
+  const token = (body && body.token) || (e && e.parameter && e.parameter.token) || '';
   if (token !== API_TOKEN) throw new Error('Token inválido.');
 }
 
-function json_(obj) {
+function output_(e, obj) {
+  const callback = e && e.parameter && e.parameter.callback ? String(e.parameter.callback) : '';
+  const payload = JSON.stringify(obj);
+
+  if (callback) {
+    const safeCallback = callback.replace(/[^a-zA-Z0-9_.$]/g, '');
+    return ContentService
+      .createTextOutput(`${safeCallback}(${payload});`)
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+
   return ContentService
-    .createTextOutput(JSON.stringify(obj))
+    .createTextOutput(payload)
     .setMimeType(ContentService.MimeType.JSON);
 }

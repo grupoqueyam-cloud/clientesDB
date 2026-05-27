@@ -6,7 +6,7 @@
 */
 const CONFIG = {
   APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyZH0IqWCqleke0KlZGZ9-fGRsr6_X5HC_zyD7wzvkFwE-8dvnTqXfPAN8wXjycvEi4zw/exec", // Ejemplo: "https://script.google.com/macros/s/AKfycb.../exec"
-  API_TOKEN: "AKfycbyZH0IqWCqleke0KlZGZ9-fGRsr6_X5HC_zyD7wzvkFwE-8dvnTqXfPAN8wXjycvEi4zw" // Opcional. Debe coincidir con API_TOKEN en Google Apps Script si lo activas.
+  API_TOKEN: "" // Opcional. Debe coincidir con API_TOKEN en Google Apps Script si lo activas.
 };
 
 const STORAGE_KEY = "crm_clientes_editorial_demo";
@@ -51,28 +51,71 @@ function setMessage(text, type = "ok") {
   if (text) setTimeout(() => { message.textContent = ""; }, 4500);
 }
 
+function jsonpRequest(params = {}) {
+  return new Promise((resolve, reject) => {
+    const callbackName = `crmCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const url = new URL(CONFIG.APPS_SCRIPT_URL);
+    Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+    url.searchParams.set("callback", callbackName);
+    if (CONFIG.API_TOKEN) url.searchParams.set("token", CONFIG.API_TOKEN);
+
+    const script = document.createElement("script");
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("Tiempo de espera agotado al conectar con Google Sheets."));
+    }, 20000);
+
+    function cleanup() {
+      clearTimeout(timeout);
+      delete window[callbackName];
+      script.remove();
+    }
+
+    window[callbackName] = (data) => {
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("No se pudo cargar la respuesta de Google Sheets."));
+    };
+
+    script.src = url.toString();
+    document.body.appendChild(script);
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function requestApi(action, payload = {}) {
   if (!apiReady()) {
     return localRequest(action, payload);
   }
 
   try {
-    let response;
+    let data;
     if (action === "list") {
-      const url = new URL(CONFIG.APPS_SCRIPT_URL);
-      url.searchParams.set("action", "list");
-      if (CONFIG.API_TOKEN) url.searchParams.set("token", CONFIG.API_TOKEN);
-      response = await fetch(url.toString(), { method: "GET", redirect: "follow" });
+      // JSONP evita el bloqueo CORS de Google Apps Script en GitHub Pages.
+      data = await jsonpRequest({ action: "list" });
     } else {
-      response = await fetch(CONFIG.APPS_SCRIPT_URL, {
+      // no-cors permite enviar el formulario a Apps Script sin preflight CORS.
+      // La respuesta del POST no se puede leer, por eso luego se consulta la lista con JSONP.
+      const form = new URLSearchParams();
+      form.set("data", JSON.stringify({ action, token: CONFIG.API_TOKEN, payload }));
+
+      await fetch(CONFIG.APPS_SCRIPT_URL, {
         method: "POST",
-        redirect: "follow",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action, token: CONFIG.API_TOKEN, payload })
+        mode: "no-cors",
+        body: form
       });
+
+      await sleep(800);
+      data = await jsonpRequest({ action: "list" });
     }
 
-    const data = await response.json();
     if (!data.ok) throw new Error(data.message || "No se pudo procesar la solicitud.");
     setStatus("connected", "Conectado a Google Sheets");
     return data;
