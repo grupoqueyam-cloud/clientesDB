@@ -1,13 +1,3 @@
-/*
-  CRM Clientes + Google Sheets + GitHub Pages
-  Versión con CONTROL MANUAL DE ACTUALIZACIÓN.
-
-  Problema corregido:
-  - Ya no se fuerza la sincronización al cargar la página.
-  - Las gráficas no se redibujan en cada movimiento/filtro.
-  - Se agrega control manual para actualizar datos, gráficas e ir al formulario.
-  - Se preserva el scroll cuando se actualiza el dashboard.
-*/
 const CONFIG = {
   APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyZH0IqWCqleke0KlZGZ9-fGRsr6_X5HC_zyD7wzvkFwE-8dvnTqXfPAN8wXjycvEi4zw/exec", // Ejemplo: "https://script.google.com/macros/s/AKfycb.../exec"
   API_TOKEN: "", // Opcional. Debe coincidir con API_TOKEN en Google Apps Script si lo activas.

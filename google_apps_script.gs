@@ -1,21 +1,3 @@
-/**
- * Backend definitivo para GitHub Pages + Google Sheets.
- *
- * CAMBIO CLAVE:
- * - Permite guardar, editar y eliminar mediante JSONP por GET.
- * - Esto evita bloqueos de Safari/Chrome/GitHub Pages con POST no-cors.
- * - Mantiene doPost como respaldo, pero el app.js usa JSONP para todo.
- *
- * PASOS:
- * 1. Abre tu Google Sheet.
- * 2. Extensiones > Apps Script.
- * 3. Borra el código anterior y pega este archivo completo.
- * 4. Ejecuta manualmente la función pruebaConexion y autoriza permisos.
- * 5. Implementar > Administrar implementaciones > Editar > Nueva versión.
- * 6. Ejecutar como: Yo.
- * 7. Acceso: Cualquier persona o Cualquier persona con el enlace.
- * 8. Copia la URL /exec y pégala en app.js.
- */
 const SHEET_NAME = 'Clientes';
 const SPREADSHEET_ID = ''; // Si el script está dentro del Sheet, déjalo vacío. Si es independiente, pega aquí el ID del Google Sheet.
 const API_TOKEN = ''; // Opcional. Si lo llenas, usa el mismo valor en app.js.
